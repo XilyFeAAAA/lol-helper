@@ -101,8 +101,7 @@ class RecordHandler:
                     s = str(s)
                     self.text += f"{i.pos}{m}{'0' + s if len(s) == 1 else s} "
                 else:
-                    pass
-                    #self.players.remove(i)
+                    self.players.remove(i)
             self.controller.keydownup('enter')  # 打开文本框
             time.sleep(0.1)  # 等待文本框
             self.controller.PressText(self.text)  # 输入
