@@ -1,9 +1,9 @@
-from .MessageEnum import *
+from .Enums import *
 
 
 # 个人信息
 class SummonerInfo:
-    def __init__(self, id, name, uid, level, profileIcon, environment=''):
+    def __init__(self, id, name, uid, level, profileIcon=-1, environment=''):
         self.summonerId: int = id
         self.displayName: str = name
         self.environment: str = environment
@@ -38,23 +38,21 @@ class LobbyInfo:
 
 # 对局信息
 class RankInfo:
-    def __init__(self, kill, death, assist, FirstBloodKill, Pentakill, QuadraKill, TripleKill, win):
-        self.kill: int = kill
-        self.death: int = death
-        self.assist: int = assist
-        self.FirstBloodKill: bool = FirstBloodKill
-        self.PentaKills: int = Pentakill
-        self.QuadraKills: int = QuadraKill
-        self.TripleKills: int = TripleKill
-        self.win: bool = win
-        self.score: int = 0
-
-    def Calculate(self):
-        self.score = (self.kill * 1.2 + self.assist * 0.8) / (1 if not self.death else self.death * 1.2)
-        self.score += self.PentaKills * 2 + self.QuadraKills * 1 + self.TripleKills * 0.5
-        self.score += self.win + self.FirstBloodKill
-        return self.score
-
+    def __init__(self, flexTier, flexDivision, flexWin, flexLoss, soloTier, soloDivision, soloWin, soloLoss, highestTier, highestDivision):
+        self.flexTier: str = flexTier
+        self.flexDivision: str = flexDivision if flexDivision != 'NA' else ""
+        self.flexWin: int = flexWin
+        self.flexLoss: int = flexLoss
+        self.flexGames = self.flexWin + self.flexLoss
+        self.flexRate = round(float(self.flexWin) / (self.flexGames if self.flexGames != 0 else 1.0), 2)
+        self.soloTier: str = soloTier
+        self.soloDivision: str = soloDivision if soloDivision != 'NA' else ""
+        self.soloWin: int = soloWin
+        self.soloLoss: int = soloLoss
+        self.soloGamse: int = self.soloWin + self.soloLoss
+        self.soloRate: float = round(float(self.soloWin) / (self.soloGamse if self.soloGamse != 0 else 1.0), 2)
+        self.highestTier: str = highestTier
+        self.highestDivision: str = highestDivision if highestDivision != 'NA' else ""
 
 
 class GameInfo:
@@ -63,14 +61,3 @@ class GameInfo:
         self.gameMode: str  # ARAM: 大乱斗 CLASSIC 排位 URF 无心火力
         self.mapId: int
 
-
-# 战利品
-class LootInfo:
-    def __init__(self, count, localizedName, type, lootName, storItemId, value, redeem):
-        self.count: int = count  # 数量
-        self.localizedName: str = localizedName  # 名字
-        self.type: str = type  # 类型
-        self.lootName: str = lootName
-        self.storeItemId: int = storItemId  # Id
-        self.value: int = value  # 价值
-        self.redeem: str = redeem

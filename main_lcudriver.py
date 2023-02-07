@@ -1,6 +1,8 @@
 import threading
+import time
 from pathlib import Path
 from Enum.Structs import *
+from Enum.Enums import *
 from lcu_driver import Connector
 from utils.LeagueGameApi import LcuApi
 from utils.common import JsonReader
@@ -57,6 +59,7 @@ async def _(connection, event):
             user.sent = True
             text = ""
             user.chatRoomId = await api.GetRoomId()
+            time.sleep(1)
             roommateIds = await api.GetRoomSummonerId()
             for i in roommateIds:
                 text += f"玩家:{(await api.GetInfoById(i)).displayName} kda:{await api.GetRankScore(id=i)}\n"

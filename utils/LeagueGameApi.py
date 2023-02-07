@@ -1,14 +1,15 @@
 import asyncio
 import json
 import subprocess
-import logging
 import re
+import time
+
 import httpx
 import requests
-from Enum.MessageEnum import *
+from Enum.Enums import *
 from Enum.Structs import *
-import base64
-
+from loguru import logger
+from modules import Config
 
 class LcuApi:
     def __init__(self):
@@ -40,17 +41,17 @@ class LcuApi:
         async with httpx.AsyncClient(auth=self.auth, headers=self.header, verify=False, http2=http2) as client:
             req = await client.get(url=self.url + route)
             if req.status_code == 404:
-                logging.error(f"[*]404 {req.json()['message']}  '{route}'")
+                logger.error(f"[*]404 {req.json()['message']}  '{route}'")
             return req
 
     async def doPost(self, route: str, http2: bool = False, **kwargs):
         """post请求"""
         async with httpx.AsyncClient(auth=self.auth, headers=self.header, verify=False, http2=http2) as client:
-            if kwargs.get('data'):
-                kwargs['data'] = json.dumps(kwargs['data'])
+            # if kwargs.get('data'):
+            #     kwargs['data'] = json.dumps(kwargs['data'])
             req = await client.post(self.url + route, **kwargs)
             if req.status_code == 404:
-                logging.error(f"[*]404 {req.json()['message']}  '{route}'")
+                logger.error(f"[*]404 {req.json()['message']}  '{route}'")
             return req
 
     async def doDelete(self, route: str):
@@ -58,7 +59,7 @@ class LcuApi:
         async with httpx.AsyncClient(auth=self.auth, headers=self.header, verify=False) as client:
             req = await client.delete(url=self.url + route)
             if req.status_code == 404:
-                logging.error(f"[*]404 {req.json()['message']}  '{route}'")
+                logger.error(f"[*]404 {req.json()['message']}  '{route}'")
             return req
 
     async def doPut(self, route: str, data: dict = None):
@@ -66,7 +67,7 @@ class LcuApi:
         async with httpx.AsyncClient(auth=self.auth, headers=self.header, verify=False) as client:
             req = await client.put(url=self.url + route, json=data)
             if req.status_code == 404:
-                logging.error(f"[*]404 {req.json()['message']}  '{route}'")
+                logger.error(f"[*]404 {req.json()['message']}  '{route}'")
             return req
 
     async def doPatch(self, route: str, data: dict = None):
@@ -74,7 +75,7 @@ class LcuApi:
         async with httpx.AsyncClient(auth=self.auth, headers=self.header, verify=False) as client:
             req = await client.patch(url=self.url + route, json=data)
             if req.status_code == 404:
-                logging.error(f"[*]404 {req.json()['message']}  '{route}'")
+                logger.error(f"[*]404 {req.json()['message']}  '{route}'")
             return req
 
     async def GetEnvironment(self) -> str:
@@ -94,9 +95,12 @@ class LcuApi:
         获取英雄信息
         """
         req = (await self.doGet(ROUTE.current_summoner)).json()
-        print(req)
         env = await self.GetEnvironment()
-        return SummonerInfo(req['summonerId'], req['displayName'], req['puuid'], req['summonerLevel'], req['profileIconId'], env)
+        summoner = SummonerInfo(req['summonerId'], req['displayName'], req['puuid'], req['summonerLevel'],
+                                req['profileIconId'], env)
+        logger.info(f"当前用户: {summoner.displayName}")
+        logger.info(f"服务器: {summoner.environment}")
+        return summoner
 
     async def GetOnlineTime(self) -> float:
         """
@@ -145,6 +149,7 @@ class LcuApi:
             },
             'isCustom': True
         }
+        logger.info("已创建5v5训练营")
         return await self.doPost(ROUTE.lobby, json=custom)
 
     async def Add_bots_team(self) -> bool:
@@ -155,6 +160,14 @@ class LcuApi:
             'teamId': '100'
         }
         return await self.doPost(ROUTE.lobby_bot, json=soraka)
+
+    async def GetCurrentChamp(self) -> int:
+        """获取选中的英雄"""
+        data = await self.doGet(ROUTE.current_champion)
+        if data.is_error or data.text == 0:
+            return 0
+        else:
+            return data.text
 
     async def GrantAuthority(self, summonerId: int) -> bool:
         """赋予房间权限"""
@@ -190,7 +203,7 @@ class LcuApi:
         """切换队伍"""
         return await self.doPost(ROUTE.switch)
 
-    async def SetRank(self, rqueue, rtier, rdivision):
+    async def SetRank(self, rtier, rdivision='I', rqueue='RANKED_SOLO_5x5'):
         """修改段位信息"""
         data = {
             "lol": {
@@ -199,6 +212,7 @@ class LcuApi:
                 "rankedLeagueDivision": rdivision
             }
         }
+        logger.info(f"成功修改段位")
         return await self.doPut(ROUTE.me, data)
 
     async def SetstatusMessage(self, msg):
@@ -208,24 +222,25 @@ class LcuApi:
 
     async def GetMe(self):
         """获取个人信息"""
-        return await self.doGet(ROUTE.me).json()
+        return (await self.doGet(ROUTE.me)).json()
 
     async def ChangeStatus(self, status: str):
         """改变状态"""
         data = {
             "availability": ClientStatus[status]
         }
-        return await self.doPost(ROUTE.me, json=data)
+        logger.info("状态已改变")
+        await self.doPut(ROUTE.me, data)
 
     async def GetBackgroundSkin(self, heroId: int):
         """获取英雄皮肤"""
         return await self.doGet(ROUTE.champion_skin.format(heroId))
 
-    async def msg2Room(self, roomId: str, msg: str):
+    async def msg2Room(self, roomId: str, msg: str, msgType: str):
         """组队房间发消息"""
         data = {
             "body": msg,
-            "type": "chat"
+            "type": msgType
         }
         return await self.doPost(ROUTE.chat_info.format(roomId), json=data)
 
@@ -245,11 +260,10 @@ class LcuApi:
 
     async def GetRoomSummonerId(self, chatRoomId):
         """获取队友id"""
-        data = (await self.doGet(ROUTE.conversation_msg.format(chatRoomId, http2=True))).json()
+        data = (await self.doGet(ROUTE.conversation_msg.format(chatRoomId))).json()
         summoners = []
         # Loop through team
         for summoner in data:
-            print(summoner)
             if summoner["body"] == "joined_room":
                 summoners.append(summoner["fromSummonerId"])
         return summoners
@@ -275,7 +289,12 @@ class LcuApi:
 
     async def GetRank(self, puuid: str):
         """查找段位"""
-        return (await self.doGet(ROUTE.rank.format(puuid))).json()
+        data = (await self.doGet(ROUTE.rank.format(puuid))).json()
+        queues = data['queues']
+        rankInfo = RankInfo(queues[0]['tier'], queues[0]['division'], queues[0]['wins'], queues[0]['losses'],
+                            queues[1]['tier'], queues[1]['division'], queues[1]['wins'], queues[1]['losses'],
+                            data['highestPreviousSeasonEndTier'], data['highestPreviousSeasonEndDivision'])
+        return rankInfo
 
     async def GetRankList(self, beginIdx: str, endIndex: str, id: str = None, puuid: str = None):
         """通过id、puuid查找对局记录"""
@@ -288,7 +307,6 @@ class LcuApi:
         """获取对局双方puuid"""
         res = [[], []]
         resp = (await self.doGet(ROUTE.session)).json()
-        print(resp)
         for i in resp['teamOne']:
             res[0].append(SummonerData(i['puuid'], i['summonerId']))
         for i in resp['teamTwo']:
@@ -331,20 +349,42 @@ class LcuApi:
 
     async def ARAM_Select(self, session_info: json, conn):
         """大乱斗抢英雄"""
-        if not conn.pick_flag:
+        if not conn.autobp_flag or conn.picked:
             return
         benches = set()
         prefers = set(conn.swap_champions)
         if session_info["benchEnabled"]:  # 大乱斗
             for i in session_info["benchChampions"]:
                 benches.add(i['championId'])
-            # overlap = prefers.intersection(benches)
-            # for champion_id in prefers.intersection(benches):
-            for champion_id in benches:
+            overlap = prefers.intersection(benches)
+            for champion_id in prefers.intersection(benches):
                 res = await self.doPost(ROUTE.swap_champion.format(champion_id))
                 if not res.is_error:
+                    conn.picked = True
                     break
             return
+
+    async def Classic_Select(self, data: json, conn):
+        if not conn.autobp_flag or conn.picked:
+            return
+        cellId: int = None
+        for order in data['myTeam']:
+            if order['summonerId'] == conn.info.summonerId:
+                cellId = order['cellId']
+                break
+        if cellId is None:
+            return
+        actions = data['actions']
+        ActionId: int = None
+        for action in actions[0]:
+            if action['actorCellId'] == cellId:
+                ActionId = action['id']
+                if not action['completed'] and action['isInProgress'] and action['championId'] == 0:
+                    res = await self.ChampSelect(conn.classic_pick, ActionId, 'pick')
+                    if not res.is_error:
+                        logger.info(f"成功锁定英雄")
+                        conn.picked = True
+                        return
 
     async def ChampSelect(self, championId: int, actionId: int, patchType: str):
         """选择禁用英雄"""
@@ -362,34 +402,43 @@ class LcuApi:
         """获取战利品信息"""
         data = (await self.doGet(ROUTE.loot_map)).json()
         items = []
-        for item in data:
-            items.append(LootInfo(
-                item['count'],
-                item['itemDesc'],
-                item['type'],
-                item['lootName'],
-                item['storeItemId'],
-                item['disenchantValue'],
-                item['redeemableStatus']
-            ))
+        for item_id in data:
+            item = data[item_id]
+            if item['itemStatus'] == 'OWNED' and item['type'] in [LootType.champion_rental, LootType.skin_rental]:
+                items.append([
+                    item['count'],
+                    item['type'],
+                    item['lootId'],
+                    item['disenchantValue']]
+                )
         return items
 
-    async def Rental_dissolve(self, loot: LootInfo, repeat: int):
-        """分解英雄碎片"""
-        """
-        info = LootInfo(1,"",LootType.champion_rental,"CHAMPION_RENTAL_11",1,1)
-		await api.Rental_dissolve(info,1)
-        """
-        data = [loot.lootName]
-        route = ROUTE.champion_rental if loot.type == LootType.champion_rental else ROUTE.skin_rental
-        return await self.doPost(route.format(repeat), data=data)
+    async def Rental_dissolve(self):
+        """分解碎片"""
+        tot_champ = 0
+        tot_skin = 0
+        items = await self.Rental_info()
+        for loot in items:
+            route = ROUTE.champion_rental if loot[1] == LootType.champion_rental else ROUTE.skin_rental
+            res = await self.doPost(route.format(loot[0]), json=[loot[2]])
+            if not res.is_error:
+                if loot[1] == LootType.champion_rental:
+                    tot_champ += loot[0] * loot[3]
+                else:
+                    tot_skin += loot[0] * loot[3]
+        logger.info(f"共分解{tot_champ}蓝色精粹 {tot_champ}橙色精粹")
 
-    async def SetRune(self, champion: ChampionInfo):
+    async def SetRune(self):
         """自动配置符文"""
-        runes = requests.get(f'https://www.bangingheads.net/runes?champion={champion.championId}').json()
+        championId = await self.GetCurrentChamp()
+        if championId == 0:
+            logger.info("配置符文失败")
+            return
+        runes = requests.get(f'https://www.bangingheads.net/runes?champion={championId}').json()
         page = (await self.doGet(ROUTE.current_rune)).json()
         if 'errorCode' not in page:
             await self.doDelete(f'/lol-perks/v1/pages/{page["id"]}')
+        logger.info("成功配置符文")
         return await self.doPost(ROUTE.page, json={
             "name": "Automatic rune configuration",
             "primaryStyleId": runes['primaryTree'],
@@ -418,19 +467,8 @@ class LcuApi:
         data = await self.GetRankList(beginIdx=0, endIndex=count, id=id, puuid=puuid)
         scores = 0
         for rank in data['games']['games']:
-            # print(rank)
             stats = rank['participants'][0]['stats']
-            info = RankInfo(
-                stats['kills'],
-                stats['deaths'],
-                stats['assists'],
-                stats['firstBloodKill'],
-                stats['pentaKills'],
-                stats['quadraKills'],
-                stats['tripleKills'],
-                stats['win']
-            )
-            scores += info.Calculate()
+            scores += (stats['kills'] + stats['assists']) * 3.0 / stats['deaths']
         return round(scores / count, 2)
 
     async def Reroll(self):
@@ -461,7 +499,7 @@ class LcuApi:
 
     async def AutoBP(self, data: json, conn):
         """自动BP"""
-        if not conn.pick_flag and not conn.ban_flag:
+        if not conn.autobp_flag:
             return
         cellId: int = None
         position: str = None
@@ -477,7 +515,7 @@ class LcuApi:
             return
         if data['timer']['phase'] == 'BAN_PICK':
             # ban
-            if conn.ban_flag:
+            if not conn.banned:
                 banActionId: int = None
                 for action in actions[0]:
                     if action['actorCellId'] == cellId:
@@ -488,10 +526,11 @@ class LcuApi:
                             for ban in bans.intersection(bannable):  # 并集
                                 res = await self.ChampSelect(ban, banActionId, 'ban')
                                 if not res.is_error:
+                                    conn.banned = True
                                     break
                             return
             # pick
-            if conn.pick_flag:
+            if not conn.picked:
                 pickActionId: int = None
                 for actionItem in actions[2:]:
                     for action in actionItem:
@@ -503,6 +542,7 @@ class LcuApi:
                                 for pick in picks.intersection(pickable):  # 并集
                                     res = await self.ChampSelect(pick, pickActionId, 'pick')
                                     if not res.is_error:
+                                        conn.picked = True
                                         break
                                 return
 
@@ -514,3 +554,28 @@ class LcuApi:
     async def getMastery(self, summonerId: int, limit: int):
         """获取最熟练英雄"""
         return (await self.doGet(ROUTE.collection.format(summonerId, limit))).json()['masteries']
+
+    async def spectatorLaunchByName(self, summonerName: str, gameQueueType: str):
+        """吊起观战"""
+        data = {
+            'allowObserveMode': 'ALL',
+            'dropInSpectateGameId': summonerName,
+            'gameQueueType': gameQueueType
+        }
+        return await self.doPost(ROUTE.spectate, json=data)
+
+    async def SearchSummoner(self, displayName: str):
+        """搜索用户信息"""
+        summonerData = await self.GetInfoByName(displayName)
+        rankInfo = await self.GetRank(summonerData.puuid)
+        rankList = await self.GetRankList(0, 10, puuid=summonerData.puuid)
+        text = ""
+        for i in rankList['games']['games']:
+            stats = i['participants'][0]['stats']
+            text += f"\n{RankmodeE2C[i['gameMode']]} {Config.heros_dict[str(i['participants'][0]['championId'])]} {stats['kills']}-{stats['deaths']}-{stats['assists']} {'赢' if stats['win'] else '输'}"
+        logger.info(f"\n用户名: {summonerData.displayName}"
+                    f"\n等级: {summonerData.summonerLevel}"
+                    f"\n单双排: {RankE2C[rankInfo.soloTier]} {rankInfo.soloDivision} {rankInfo.soloWin}赢{rankInfo.soloLoss}输 {rankInfo.soloRate}胜率"
+                    f"\n灵活组排: {RankE2C[rankInfo.flexTier]} {rankInfo.flexDivision} {rankInfo.flexWin}赢{rankInfo.flexLoss}输 {rankInfo.flexRate}胜率"
+                    f"\n最高段位: {RankE2C[rankInfo.highestTier]} {rankInfo.highestDivision}"
+                    + text)
